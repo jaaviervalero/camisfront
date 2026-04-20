@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { Analytics } from '@vercel/analytics/next';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="text-center text-xs text-gray-400 py-6">
           © {new Date().getFullYear()} Camis — Todos los derechos reservados
         </footer>
+        <Analytics />
       </body>
     </html>
   );
