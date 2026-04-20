@@ -9,7 +9,6 @@ services:
     volumes:
       # Persiste la sesión de WhatsApp entre reinicios del contenedor
       - ./wwebjs_auth:/app/.wwebjs_auth
-    network_mode: host
     logging:
       driver: "json-file"
       options:

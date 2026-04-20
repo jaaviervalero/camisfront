@@ -20,4 +20,8 @@ RUN npm install --omit=dev
 
 COPY bot-local.js ./
 
+RUN addgroup -g 1001 -S appgroup && adduser -u 1001 -S appuser -G appgroup \
+    && chown -R appuser:appgroup /app
+USER appuser
+
 CMD ["node", "bot-local.js"]

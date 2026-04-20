@@ -20,7 +20,7 @@ export const PRICES: Record<Version, number> = {
   Infantil: 10,
 };
 
-export const PERSONALIZATION_PRICE = 1;
+export const PERSONALIZATION_PRICE = 2;
 
 // -------------------------------------------------------------
 // Lógica de pedido comunitario

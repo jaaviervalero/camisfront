@@ -162,7 +162,7 @@ export default function SearchForm({ onItemAdded }: Props) {
                   className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
                     version === v ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-700 border-gray-300 hover:border-green-500'
                   }`}>
-                  {v} <span className="opacity-70 text-xs">${PRICES[v]}</span>
+                  {v} <span className="opacity-70 text-xs">{PRICES[v]}€</span>
                 </button>
               ))}
             </div>
@@ -206,7 +206,7 @@ export default function SearchForm({ onItemAdded }: Props) {
 
           <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 flex justify-between">
             <span>Precio unitario</span>
-            <span className="font-bold text-green-700">${unitPrice}</span>
+            <span className="font-bold text-green-700">{unitPrice}€</span>
           </div>
 
           {uploadError && <p className="text-red-600 text-sm">{uploadError}</p>}

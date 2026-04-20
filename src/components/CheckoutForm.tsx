@@ -3,14 +3,13 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useCartStore } from "@/store/cartStore";
-import { createClient } from "@/lib/supabase";
 import {
   calculateOrderTotal,
   getShippingCost,
   defaultIsCommunity,
   COMMUNITY_THRESHOLD,
 } from "@/lib/config";
-import type { PedidoInsert, ShippingFormData } from "@/lib/types";
+import type { ShippingFormData } from "@/lib/types";
 
 const EMPTY_SHIPPING: ShippingFormData = {
   envio_nombre:  "",
@@ -51,31 +50,19 @@ export default function CheckoutForm() {
     setSubmitting(true);
     setSubmitError("");
 
-    const finalBreakdown = calculateOrderTotal(items, isCommunity);
+    try {
+      const res = await fetch("/api/pedido", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items, isCommunity, shipping }),
+      });
 
-    const pedido: PedidoInsert = {
-      envio_nombre:   shipping.envio_nombre,
-      envio_email:    shipping.envio_email,
-      envio_telefono: shipping.envio_telefono,
-      es_comunitario: isCommunity,
-      items_json:     items,
-      precio_total:   finalBreakdown.total,
-      estado:         "pendiente",
-      // Dirección sólo para pedidos independientes
-      ...((!isCommunity) && {
-        envio_direccion:        shipping.envio_direccion,
-        envio_pais:             shipping.envio_pais,
-        envio_estado_provincia: shipping.envio_estado_provincia,
-        envio_ciudad:           shipping.envio_ciudad,
-        envio_codigo_postal:    shipping.envio_codigo_postal,
-      }),
-    };
-
-    const supabase = createClient();
-    const { error } = await supabase.from("pedidos").insert(pedido);
-
-    if (error) {
-      setSubmitError("No se pudo guardar el pedido: " + error.message);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Error al guardar el pedido");
+      }
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : "No se pudo guardar el pedido");
       setSubmitting(false);
       return;
     }
@@ -125,7 +112,7 @@ export default function CheckoutForm() {
               <div>
                 <p className="font-semibold text-gray-900">Pedido independiente</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Se envía a tu dirección. Coste de envío: <strong>${shippingCost}</strong>
+                  Se envía a tu dirección. Coste de envío: <strong>{shippingCost}€</strong>
                 </p>
               </div>
             </label>
@@ -207,25 +194,25 @@ export default function CheckoutForm() {
                 {item.descripcion || "Camiseta"} · {item.version} · {item.talla}
                 {(item.nombre || item.dorsal) && ` · ${[item.nombre, item.dorsal].filter(Boolean).join(" ")}`}
               </span>
-              <span className="font-medium shrink-0">${item.precio_unitario}</span>
+              <span className="font-medium shrink-0">{item.precio_unitario}€</span>
             </li>
           ))}
         </ul>
         <div className="border-t pt-3 space-y-1.5 text-sm text-gray-700">
           <div className="flex justify-between">
             <span>Subtotal</span>
-            <span>${(breakdown.subtotalPrendas + breakdown.subtotalPersonalizacion).toFixed(2)}</span>
+            <span>{(breakdown.subtotalPrendas + breakdown.subtotalPersonalizacion).toFixed(2)}€</span>
           </div>
           <div className="flex justify-between">
             <span>Envío</span>
             <span>{breakdown.costoEnvio === 0
               ? <span className="text-green-600 font-medium">Gratis</span>
-              : `$${breakdown.costoEnvio.toFixed(2)}`}
+              : `${breakdown.costoEnvio.toFixed(2)}€`}
             </span>
           </div>
           <div className="flex justify-between font-bold text-base text-gray-900 border-t pt-2">
             <span>Total</span>
-            <span className="text-green-700">${breakdown.total.toFixed(2)}</span>
+            <span className="text-green-700">{breakdown.total.toFixed(2)}€</span>
           </div>
         </div>
         {submitError && <p className="text-red-600 text-sm">{submitError}</p>}

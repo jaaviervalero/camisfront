@@ -42,7 +42,7 @@ export default function Cart() {
               </p>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-sm font-bold text-green-700">${item.precio_unitario}</p>
+              <p className="text-sm font-bold text-green-700">{item.precio_unitario}€</p>
               <button onClick={() => removeItem(item.id)} className="text-xs text-red-400 hover:text-red-600 mt-1">
                 Eliminar
               </button>
@@ -54,21 +54,21 @@ export default function Cart() {
       <div className="border-t pt-3 space-y-1 text-sm text-gray-700">
         <div className="flex justify-between">
           <span>Prendas</span>
-          <span>${breakdown.subtotalPrendas.toFixed(2)}</span>
+          <span>{breakdown.subtotalPrendas.toFixed(2)}€</span>
         </div>
         {breakdown.subtotalPersonalizacion > 0 && (
           <div className="flex justify-between">
             <span>Personalización</span>
-            <span>${breakdown.subtotalPersonalizacion.toFixed(2)}</span>
+            <span>{breakdown.subtotalPersonalizacion.toFixed(2)}€</span>
           </div>
         )}
         <div className="flex justify-between">
           <span>Envío estimado</span>
-          <span>{shippingCost === 0 ? <span className="text-green-600 font-medium">Gratis</span> : `$${shippingCost}`}</span>
+          <span>{shippingCost === 0 ? <span className="text-green-600 font-medium">Gratis</span> : `${shippingCost}€`}</span>
         </div>
         <div className="flex justify-between font-bold text-base text-gray-900 border-t pt-2">
           <span>Total estimado</span>
-          <span>${breakdown.total.toFixed(2)}</span>
+          <span>{breakdown.total.toFixed(2)}€</span>
         </div>
       </div>
 
