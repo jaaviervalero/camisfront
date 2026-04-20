@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+backend/node_modules/
+
+# Next.js
+.next/
+out/
+
+# env files (NUNCA subir credenciales)
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# misc
+.DS_Store
+*.log
