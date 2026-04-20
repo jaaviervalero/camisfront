@@ -200,7 +200,7 @@ export default function CheckoutForm() {
           {items.map((item) => (
             <li key={item.id} className="flex justify-between py-2">
               <span className="text-gray-700">
-                {item.equipo} {item.temporada} · {item.version} · {item.talla}
+                {item.descripcion || 'Camiseta'} · {item.version} · {item.talla}
                 {(item.nombre || item.dorsal) && ` (${[item.nombre, item.dorsal].filter(Boolean).join(' ')})`}
               </span>
               <span className="font-medium">${item.precio_unitario}</span>

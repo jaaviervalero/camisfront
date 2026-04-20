@@ -2,8 +2,7 @@ import type { Version } from './config';
 
 export interface CartItem {
   id: string;
-  equipo: string;
-  temporada: string;
+  descripcion?: string;  // texto libre opcional que describe la camiseta
   version: Version;
   talla: string;
   nombre?: string;
@@ -29,4 +28,3 @@ export interface PedidoInsert extends ShippingFormData {
   precio_total: number;
   estado: string;
 }
-

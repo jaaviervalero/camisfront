@@ -97,7 +97,7 @@ function formatPedidoMessage(pedido) {
           ? `   ✏️  ${[item.nombre, item.dorsal].filter(Boolean).join(' / ')}`
           : '';
       return (
-        `  ${idx + 1}. ${item.equipo} — ${item.temporada}\n` +
+        `  ${idx + 1}. ${item.descripcion || 'Camiseta'}\n` +
         `     Versión: ${item.version} | Talla: ${item.talla}\n` +
         `     Precio unitario: $${item.precio_unitario}` +
         (personalizacion ? `\n${personalizacion}` : '')

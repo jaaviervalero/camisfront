@@ -28,13 +28,13 @@ export default function Cart() {
           <li key={item.id} className="py-3 flex gap-3 items-start">
             <img
               src={item.url_imagen}
-              alt={`${item.equipo} ${item.temporada}`}
+              alt={item.descripcion || 'Camiseta'}
               className="w-14 h-14 object-contain rounded-lg border bg-gray-50 shrink-0"
               onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder-jersey.png'; }}
             />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-800 truncate">
-                {item.equipo} — {item.temporada}
+                {item.descripcion || 'Camiseta'}
               </p>
               <p className="text-xs text-gray-500">
                 {item.version} · Talla {item.talla}

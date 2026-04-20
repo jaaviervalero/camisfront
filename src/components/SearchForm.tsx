@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { ADULT_SIZES, KIDS_SIZES, type Version } from '@/lib/config';
 import { useCartStore } from '@/store/cartStore';
+import { createClient } from '@/lib/supabase';
 
 const VERSIONS: Version[] = ['Fan', 'Player', 'Retro', 'Infantil'];
+const MAX_FILE_MB = 8;
 
 interface Props {
   onItemAdded?: () => void;
@@ -12,106 +14,170 @@ interface Props {
 
 export default function SearchForm({ onItemAdded }: Props) {
   const { addItem, discountApplied } = useCartStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [equipo, setEquipo]       = useState('');
-  const [temporada, setTemporada] = useState('');
-  const [urlImagen, setUrlImagen] = useState('');
-  const [version, setVersion]     = useState<Version>('Fan');
-  const [talla, setTalla]         = useState('M');
-  const [nombre, setNombre]       = useState('');
-  const [dorsal, setDorsal]       = useState('');
-  const [step, setStep]           = useState<'info' | 'configure'>('info');
+  // Paso 1 — foto
+  const [file, setFile]           = useState<File | null>(null);
+  const [preview, setPreview]     = useState<string>('');
+  const [descripcion, setDesc]    = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  // Paso 2 — configuración
+  const [version, setVersion] = useState<Version>('Fan');
+  const [talla, setTalla]     = useState('M');
+  const [nombre, setNombre]   = useState('');
+  const [dorsal, setDorsal]   = useState('');
+
+  const [step, setStep] = useState<'foto' | 'configure'>('foto');
 
   const sizes = version === 'Infantil' ? [...KIDS_SIZES] : [...ADULT_SIZES];
 
-  function handleNext(e: React.FormEvent) {
-    e.preventDefault();
-    if (!equipo.trim() || !temporada.trim()) return;
-    setStep('configure');
+  function handleFileChange(f: File | null) {
+    if (!f) return;
+    if (f.size > MAX_FILE_MB * 1024 * 1024) {
+      setUploadError(`El archivo supera los ${MAX_FILE_MB} MB`);
+      return;
+    }
+    if (!f.type.startsWith('image/')) {
+      setUploadError('Solo se aceptan imágenes');
+      return;
+    }
+    setUploadError('');
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
   }
 
-  function handleAddToCart() {
-    addItem(
-      {
-        equipo:     equipo.trim(),
-        temporada:  temporada.trim(),
-        version,
-        talla,
-        nombre:     nombre.trim() || undefined,
-        dorsal:     dorsal.trim() || undefined,
-        url_imagen: urlImagen.trim(),
-      },
-      discountApplied,
-    );
-    setEquipo(''); setTemporada(''); setUrlImagen('');
-    setNombre(''); setDorsal('');
-    setVersion('Fan'); setTalla('M');
-    setStep('info');
-    onItemAdded?.();
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    handleFileChange(e.dataTransfer.files[0] ?? null);
+  }
+
+  async function handleNext() {
+    if (!file) return;
+    setUploading(true);
+    setUploadError('');
+
+    try {
+      const supabase  = createClient();
+      const ext       = file.name.split('.').pop() ?? 'jpg';
+      const path      = `jerseys/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('jersey-images')
+        .upload(path, file, { upsert: false, contentType: file.type });
+
+      if (uploadErr) throw new Error(uploadErr.message);
+
+      const { data } = supabase.storage.from('jersey-images').getPublicUrl(path);
+      addItem(
+        {
+          descripcion: descripcion.trim() || undefined,
+          version,
+          talla,
+          nombre:    nombre.trim() || undefined,
+          dorsal:    dorsal.trim() || undefined,
+          url_imagen: data.publicUrl,
+        },
+        discountApplied,
+      );
+
+      // Reset
+      setFile(null);
+      setPreview('');
+      setDesc('');
+      setNombre('');
+      setDorsal('');
+      setVersion('Fan');
+      setTalla('M');
+      setStep('foto');
+      onItemAdded?.();
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : 'Error al subir la imagen');
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
     <div className="bg-white rounded-2xl shadow-lg p-6 space-y-6">
 
-      {/* ---- PASO 1: Datos de la camiseta ---- */}
-      {step === 'info' && (
-        <form onSubmit={handleNext} className="space-y-4">
-          <h2 className="text-xl font-bold text-gray-800">Agregar camiseta</h2>
+      {/* ---- PASO 1: Subir foto ---- */}
+      {step === 'foto' && (
+        <div className="space-y-5">
+          <h2 className="text-xl font-bold text-gray-800">Subir foto de la camiseta</h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Equipo</label>
-              <input
-                type="text"
-                value={equipo}
-                onChange={(e) => setEquipo(e.target.value)}
-                placeholder="Ej: Real Madrid"
-                required
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Temporada</label>
-              <input
-                type="text"
-                value={temporada}
-                onChange={(e) => setTemporada(e.target.value)}
-                placeholder="Ej: 2024/25"
-                required
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none"
-              />
-            </div>
+          {/* Zona de drop */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+            className={`relative border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition
+              ${preview ? 'border-green-400 bg-green-50' : 'border-gray-300 bg-gray-50 hover:border-green-400 hover:bg-green-50'}
+            `}
+            style={{ minHeight: 220 }}
+          >
+            {preview ? (
+              <>
+                <img
+                  src={preview}
+                  alt="Vista previa"
+                  className="max-h-48 max-w-full object-contain rounded-xl"
+                />
+                <span className="text-xs text-gray-500">{file?.name}</span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setFile(null); setPreview(''); }}
+                  className="absolute top-2 right-2 bg-white border rounded-full w-7 h-7 flex items-center justify-center text-gray-500 hover:text-red-500 shadow"
+                >
+                  ✕
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-5xl text-gray-300">📷</div>
+                <p className="text-sm font-medium text-gray-600">
+                  Arrastrá una foto o hacé click para elegir
+                </p>
+                <p className="text-xs text-gray-400">JPG, PNG, WEBP — máx. {MAX_FILE_MB} MB</p>
+              </>
+            )}
           </div>
 
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+          />
+
+          {/* Descripción opcional */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              URL de imagen <span className="text-gray-400 font-normal">(opcional — pega el link de la foto)</span>
+              Descripción <span className="text-gray-400 font-normal">(opcional — ej: Real Madrid 2024/25)</span>
             </label>
             <input
-              type="url"
-              value={urlImagen}
-              onChange={(e) => setUrlImagen(e.target.value)}
-              placeholder="https://..."
+              type="text"
+              value={descripcion}
+              onChange={(e) => setDesc(e.target.value)}
+              maxLength={60}
+              placeholder="Ej: Barcelona Local 2025"
               className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none"
             />
           </div>
 
-          {urlImagen.trim() && (
-            <img
-              src={urlImagen}
-              alt="Vista previa"
-              className="h-32 object-contain rounded-xl border bg-gray-50 mx-auto"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-            />
-          )}
+          {uploadError && <p className="text-red-600 text-sm">{uploadError}</p>}
 
           <button
-            type="submit"
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg transition"
+            type="button"
+            onClick={() => { if (file) setStep('configure'); }}
+            disabled={!file}
+            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-semibold py-2 rounded-lg transition"
           >
             Configurar prenda →
           </button>
-        </form>
+        </div>
       )}
 
       {/* ---- PASO 2: Configurar versión, talla y personalización ---- */}
@@ -119,25 +185,24 @@ export default function SearchForm({ onItemAdded }: Props) {
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-gray-800">Configurar camiseta</h2>
-            <button onClick={() => setStep('info')} className="text-sm text-gray-500 hover:text-gray-700 underline">
-              ← Volver
+            <button
+              onClick={() => setStep('foto')}
+              className="text-sm text-gray-500 hover:text-gray-700 underline"
+            >
+              ← Cambiar foto
             </button>
           </div>
 
-          <div className="flex gap-4 items-start">
-            {urlImagen.trim() && (
+          {preview && (
+            <div className="flex gap-4 items-center">
               <img
-                src={urlImagen}
+                src={preview}
                 alt="Camiseta"
                 className="w-20 h-20 object-contain rounded-xl border bg-gray-50 shrink-0"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
-            )}
-            <div>
-              <p className="font-semibold text-gray-800">{equipo}</p>
-              <p className="text-gray-500 text-sm">{temporada}</p>
+              {descripcion && <p className="text-sm font-medium text-gray-700">{descripcion}</p>}
             </div>
-          </div>
+          )}
 
           {/* Versión */}
           <div>
@@ -216,11 +281,15 @@ export default function SearchForm({ onItemAdded }: Props) {
             </p>
           )}
 
+          {uploadError && <p className="text-red-600 text-sm">{uploadError}</p>}
+
           <button
-            onClick={handleAddToCart}
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition"
+            type="button"
+            onClick={handleNext}
+            disabled={uploading}
+            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition"
           >
-            Agregar al carrito
+            {uploading ? 'Subiendo imagen…' : 'Agregar al carrito'}
           </button>
         </div>
       )}
