@@ -1,0 +1,17 @@
+services:
+  camis-bot:
+    build: .
+    image: camis-bot:latest
+    container_name: camis-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persiste la sesión de WhatsApp entre reinicios del contenedor
+      - ./wwebjs_auth:/app/.wwebjs_auth
+    network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

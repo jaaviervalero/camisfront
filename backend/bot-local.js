@@ -1,37 +1,22 @@
-/**
- * bot-local.js
- * ============
- * Backend local de automatización para el sistema CAMIS.
- *
- * - Escucha eventos INSERT en tiempo real de la tabla `pedidos` de Supabase.
- * - Formatea un resumen legible del pedido.
- * - Envía el resumen al chat de Telegram configurado.
- *
- * Uso:
- *   node bot-local.js
- *
- * Variables de entorno requeridas (ver .env.example):
- *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
- *   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
- */
-
 'use strict';
 
 require('dotenv').config();
 
-const { createClient } = require('@supabase/supabase-js');
-const TelegramBot      = require('node-telegram-bot-api');
+const { createClient }                    = require('@supabase/supabase-js');
+const TelegramBot                         = require('node-telegram-bot-api');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const qrcode                              = require('qrcode-terminal');
 
 // ---------------------------------------------------------------
-// Validación de variables de entorno
+// Validación de entorno
 // ---------------------------------------------------------------
 const REQUIRED_VARS = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_CHAT_ID',
+  'PROVEEDOR_WHATSAPP',
 ];
-
 for (const v of REQUIRED_VARS) {
   if (!process.env[v]) {
     console.error(`[ERROR] Falta la variable de entorno: ${v}`);
@@ -40,197 +25,239 @@ for (const v of REQUIRED_VARS) {
 }
 
 // ---------------------------------------------------------------
-// Clientes
+// Supabase
 // ---------------------------------------------------------------
-
-// Usamos la Service Role Key para que el bot pueda leer pedidos
-// sin restricciones de RLS.
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
 
-// polling: true → no requiere webhook ni servidor HTTPS
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
+// ---------------------------------------------------------------
+// Telegram — polling habilitado para recibir callbacks de botones
+// ---------------------------------------------------------------
+const bot     = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+// Mapa en memoria: pedido_id → datos del pedido (para el callback)
+const pendingOrders = new Map();
 
 // ---------------------------------------------------------------
-// Formateador de mensajes
+// WhatsApp
 // ---------------------------------------------------------------
+let waReady = false;
 
-/**
- * Construye un mensaje de texto Markdown-compatible con el resumen
- * completo del pedido para enviarlo por Telegram (y futuros canales).
- *
- * @param {object} pedido - Fila completa de la tabla `pedidos`
- * @returns {string} Mensaje formateado listo para enviar
- */
-function formatPedidoMessage(pedido) {
+const waClient = new Client({
+  authStrategy: new LocalAuth({ dataPath: '/app/.wwebjs_auth' }),
+  puppeteer: {
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  },
+});
+
+waClient.on('qr', (qr) => {
+  console.log('[WA] Escaneá este QR con tu WhatsApp:');
+  qrcode.generate(qr, { small: true });
+});
+waClient.on('ready',       () => { waReady = true;  console.log('[WA] ✅ Conectado'); });
+waClient.on('disconnected', (r) => { waReady = false; console.warn('[WA] Desconectado:', r); });
+waClient.initialize();
+
+// ---------------------------------------------------------------
+// Formatear mensaje Telegram
+// ---------------------------------------------------------------
+function formatTelegramMessage(pedido) {
   const {
-    id,
-    created_at,
-    usa_codigo_descuento,
-    es_comunitario,
-    envio_nombre,
-    envio_direccion,
-    envio_ciudad,
-    envio_estado_provincia,
-    envio_pais,
-    envio_codigo_postal,
-    envio_telefono,
-    items_json,
-    precio_total,
-    estado,
+    id, created_at, es_comunitario,
+    envio_nombre, envio_email, envio_telefono,
+    envio_direccion, envio_ciudad, envio_estado_provincia,
+    envio_pais, envio_codigo_postal,
+    items_json, precio_total, estado,
   } = pedido;
 
-  const fecha = new Date(created_at).toLocaleString('es-AR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
+  const fecha = new Date(created_at).toLocaleString('es-ES', {
+    dateStyle: 'short', timeStyle: 'short',
   });
 
-  // Bloque de ítems
   const itemsText = (items_json ?? [])
     .map((item, idx) => {
-      const personalizacion =
-        item.nombre || item.dorsal
-          ? `   ✏️  ${[item.nombre, item.dorsal].filter(Boolean).join(' / ')}`
-          : '';
+      const pers = (item.nombre || item.dorsal)
+        ? `\n   ✏️  ${[item.nombre, item.dorsal].filter(Boolean).join(' / ')}`
+        : '';
       return (
         `  ${idx + 1}. ${item.descripcion || 'Camiseta'}\n` +
-        `     Versión: ${item.version} | Talla: ${item.talla}\n` +
-        `     Precio unitario: $${item.precio_unitario}` +
-        (personalizacion ? `\n${personalizacion}` : '')
+        `     ${item.version} | Talla ${item.talla} | $${item.precio_unitario}${pers}`
       );
     })
     .join('\n\n');
 
-  const flagDescuento  = usa_codigo_descuento ? '✅ Sí (AMIGOS2024)' : '❌ No';
-  const flagComunitario = es_comunitario       ? '✅ Sí'              : '❌ No';
-
   return (
     `🆕 *NUEVO PEDIDO* — \`${id.slice(0, 8)}...\`\n` +
-    `📅 ${fecha} | Estado: *${estado}*\n` +
-    `\n` +
-    `👤 *Cliente*\n` +
-    `  Nombre:    ${envio_nombre}\n` +
-    `  Teléfono:  ${envio_telefono}\n` +
-    `\n` +
-    `📦 *Envío*\n` +
-    `  ${envio_direccion}\n` +
-    `  ${envio_ciudad}, ${envio_estado_provincia} ${envio_codigo_postal}\n` +
-    `  ${envio_pais}\n` +
-    `\n` +
-    `🎽 *Prendas (${(items_json ?? []).length})*\n` +
-    `${itemsText}\n` +
-    `\n` +
-    `💸 *Precio total: $${precio_total.toFixed(2)}*\n` +
-    `🏷️  Código descuento: ${flagDescuento}\n` +
-    `🤝 Pedido comunitario: ${flagComunitario}\n`
+    `📅 ${fecha} | Estado: *${estado}*\n\n` +
+    `👤 *Cliente*\n  ${envio_nombre}\n  📧 ${envio_email}\n  📞 ${envio_telefono}\n\n` +
+    `📦 *Envío*\n  ${envio_direccion}\n  ${envio_ciudad}, ${envio_estado_provincia} ${envio_codigo_postal}\n  ${envio_pais}\n\n` +
+    `🎽 *Prendas (${(items_json ?? []).length})*\n${itemsText}\n\n` +
+    `💸 *Total: $${Number(precio_total).toFixed(2)}*\n` +
+    `🤝 Pedido comunitario: ${es_comunitario ? '✅ Sí' : '❌ No'}\n`
   );
 }
 
 // ---------------------------------------------------------------
-// Manejador del evento INSERT
+// Enviar prendas al proveedor por WhatsApp
 // ---------------------------------------------------------------
-
-/**
- * Se ejecuta cada vez que se inserta un nuevo pedido en Supabase.
- * Aquí se centraliza toda la lógica de notificación.
- *
- * @param {object} payload - Payload del evento Realtime de Supabase
- */
-async function handleNewPedido(payload) {
-  const pedido = payload.new;
-  console.log(`[INFO] Nuevo pedido recibido: ${pedido.id}`);
-
-  const mensaje = formatPedidoMessage(pedido);
-
-  // ------------------------------------------------------------------
-  // NOTIFICACIÓN 1: Telegram (operativo)
-  // ------------------------------------------------------------------
-  try {
-    await bot.sendMessage(TELEGRAM_CHAT_ID, mensaje, { parse_mode: 'Markdown' });
-    console.log(`[INFO] Mensaje Telegram enviado para pedido ${pedido.id}`);
-  } catch (err) {
-    console.error('[ERROR] Telegram:', err.message);
+async function enviarAlProveedor(pedido) {
+  if (!waReady) {
+    await bot.sendMessage(CHAT_ID, `⚠️ WhatsApp no conectado. No se pudo enviar el pedido \`${pedido.id.slice(0, 8)}\`.`, { parse_mode: 'Markdown' });
+    return false;
   }
 
-  // ------------------------------------------------------------------
-  // NOTIFICACIÓN 2 (PROVEEDOR): Inyectar WhatsApp Web aquí
-  // ------------------------------------------------------------------
-  //
-  // Para notificar al proveedor vía WhatsApp, instala la librería:
-  //   npm install whatsapp-web.js qrcode-terminal
-  //
-  // Luego sigue estos pasos:
-  //
-  //   1. Inicializa el cliente al arrancar el script (fuera de este handler):
-  //
-  //      const { Client, LocalAuth } = require('whatsapp-web.js');
-  //      const qrcode = require('qrcode-terminal');
-  //
-  //      const waClient = new Client({ authStrategy: new LocalAuth() });
-  //      waClient.on('qr', (qr) => qrcode.generate(qr, { small: true }));
-  //      waClient.on('ready', () => console.log('[WA] WhatsApp listo'));
-  //      waClient.initialize();
-  //
-  //   2. Dentro de esta función, después del bloque de Telegram,
-  //      envía el mensaje al número del proveedor:
-  //
-  //      const PROVEEDOR_WA = process.env.PROVEEDOR_WHATSAPP; // "5491123456789@c.us"
-  //      try {
-  //        await waClient.sendMessage(PROVEEDOR_WA, mensaje);
-  //        console.log(`[INFO] WhatsApp enviado al proveedor para pedido ${pedido.id}`);
-  //      } catch (err) {
-  //        console.error('[ERROR] WhatsApp:', err.message);
-  //      }
-  //
-  // ------------------------------------------------------------------
-}
+  const numero  = process.env.PROVEEDOR_WHATSAPP;
+  const items   = pedido.items_json ?? [];
 
-// ---------------------------------------------------------------
-// Suscripción Realtime
-// ---------------------------------------------------------------
+  const cabecera =
+    `📦 *Pedido ${pedido.id.slice(0, 8)}*\n` +
+    `Cliente: ${pedido.envio_nombre} | ${pedido.envio_telefono}\n` +
+    `Dirección: ${pedido.envio_direccion}, ${pedido.envio_ciudad} ${pedido.envio_codigo_postal}, ${pedido.envio_pais}`;
 
-function startRealtime() {
-  console.log('[INFO] Conectando a Supabase Realtime…');
+  try {
+    await waClient.sendMessage(numero, cabecera);
+  } catch (err) {
+    console.error('[WA] Error cabecera:', err.message);
+  }
 
-  supabase
-    .channel('pedidos-nuevos')
-    .on(
-      'postgres_changes',
-      {
-        event:  'INSERT',
-        schema: 'public',
-        table:  'pedidos',
-      },
-      handleNewPedido,
-    )
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('[INFO] ✅ Suscrito a pedidos en tiempo real. Esperando pedidos…');
+  for (const item of items) {
+    const ficha =
+      `version: ${item.version}\n` +
+      `size: ${item.talla}\n` +
+      `name: ${item.nombre || '-'}\n` +
+      `number: ${item.dorsal || '-'}`;
+
+    try {
+      if (item.url_imagen) {
+        const media = await MessageMedia.fromUrl(item.url_imagen, { unsafeMime: true });
+        await waClient.sendMessage(numero, media, { caption: ficha });
       } else {
-        console.log(`[INFO] Estado de suscripción: ${status}`);
+        await waClient.sendMessage(numero, ficha);
       }
-    });
+      console.log(`[WA] Prenda enviada: ${item.descripcion || item.version}`);
+    } catch (err) {
+      console.error('[WA] Error prenda:', err.message);
+    }
+  }
+
+  return true;
 }
 
 // ---------------------------------------------------------------
-// Señales del proceso
+// Handler botón "Enviar al proveedor"
 // ---------------------------------------------------------------
+bot.on('callback_query', async (query) => {
+  const { id: queryId, message, data } = query;
 
-process.on('SIGINT', () => {
-  console.log('\n[INFO] Cerrando bot…');
-  supabase.removeAllChannels().then(() => process.exit(0));
+  if (!data?.startsWith('send_supplier:')) return;
+
+  const pedidoId = data.replace('send_supplier:', '');
+  const pedido   = pendingOrders.get(pedidoId);
+
+  // Responder al callback para quitar el "reloj" en Telegram
+  await bot.answerCallbackQuery(queryId, { text: 'Enviando al proveedor…' });
+
+  if (!pedido) {
+    await bot.editMessageText(
+      message.text + '\n\n⚠️ _Pedido no encontrado en memoria (reinicio del bot)_',
+      { chat_id: message.chat.id, message_id: message.message_id, parse_mode: 'Markdown' },
+    );
+    return;
+  }
+
+  const ok = await enviarAlProveedor(pedido);
+
+  // Editar el mensaje original para confirmar el envío
+  await bot.editMessageText(
+    formatTelegramMessage(pedido) + (ok
+      ? '\n✅ *Enviado al proveedor por WhatsApp*'
+      : '\n❌ *Error al enviar por WhatsApp*'),
+    {
+      chat_id:    message.chat.id,
+      message_id: message.message_id,
+      parse_mode: 'Markdown',
+    },
+  );
+
+  pendingOrders.delete(pedidoId);
 });
 
-process.on('unhandledRejection', (reason) => {
-  console.error('[ERROR] UnhandledRejection:', reason);
-});
+// ---------------------------------------------------------------
+// Polling Supabase
+// ---------------------------------------------------------------
+const POLL_MS = parseInt(process.env.POLL_INTERVAL_MS ?? '15000', 10);
+let running   = false;
+
+async function poll() {
+  if (running) return;
+  running = true;
+  try {
+    const { data: pedidos, error } = await supabase
+      .from('pedidos')
+      .select('*')
+      .eq('notificado', false)
+      .order('created_at', { ascending: true });
+
+    if (error) { console.error('[ERROR] Supabase:', error.message); return; }
+    if (!pedidos?.length) return;
+
+    console.log(`[INFO] ${pedidos.length} pedido(s) nuevos`);
+
+    for (const pedido of pedidos) {
+      // Guardar en memoria para el callback
+      pendingOrders.set(pedido.id, pedido);
+
+      // Enviar a Telegram con botón de aprobación
+      try {
+        await bot.sendMessage(
+          CHAT_ID,
+          formatTelegramMessage(pedido),
+          {
+            parse_mode:   'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                {
+                  text:          '📲 Enviar al proveedor',
+                  callback_data: `send_supplier:${pedido.id}`,
+                },
+              ]],
+            },
+          },
+        );
+        console.log(`[OK] Telegram → pedido ${pedido.id}`);
+      } catch (err) {
+        console.error(`[ERROR] Telegram:`, err.message);
+        pendingOrders.delete(pedido.id);
+        continue;
+      }
+
+      // Marcar notificado en Supabase
+      const { error: upErr } = await supabase
+        .from('pedidos').update({ notificado: true }).eq('id', pedido.id);
+      if (upErr) console.error('[ERROR] Update notificado:', upErr.message);
+    }
+  } catch (err) {
+    console.error('[ERROR] Poll:', err.message);
+  } finally {
+    running = false;
+  }
+}
 
 // ---------------------------------------------------------------
 // Arranque
 // ---------------------------------------------------------------
+console.log(`[INFO] Bot iniciado — polling cada ${POLL_MS / 1000}s`);
+poll();
+const interval = setInterval(poll, POLL_MS);
 
-startRealtime();
+process.on('SIGTERM', () => {
+  clearInterval(interval);
+  waClient.destroy().finally(() => process.exit(0));
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[ERROR] UnhandledRejection:', reason);
+});

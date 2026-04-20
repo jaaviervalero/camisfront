@@ -11,14 +11,18 @@
 // =============================================================
 
 export interface DiscountCode {
-  code:   string;
-  label:  string;
+  code: string;
+  label: string;
   active: boolean;
 }
 
 export const DISCOUNT_CODES: DiscountCode[] = [
-  { code: 'AMIGOS2024', label: 'Grupo amigos temporada 2024', active: true  },
-  { code: 'PROMO10',    label: 'Promo Instagram mayo 2025',   active: false },
+  { code: "AMIGOS2024", label: "Grupo amigos temporada 2024", active: false },
+  {
+    code: "nohaydossintres",
+    label: "Promo Instagram mayo 2025",
+    active: false,
+  },
   // Agregá más códigos aquí ↓
   // { code: 'VERANO25', label: 'Campaña verano 2025', active: true },
 ];
