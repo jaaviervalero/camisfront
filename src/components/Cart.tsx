@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { useCartStore } from '@/store/cartStore';
-import { calculateOrderTotal, canJoinCommunityOrder, getShippingCost } from '@/lib/config';
+import { calculateOrderTotal, defaultIsCommunity, getShippingCost, COMMUNITY_THRESHOLD } from '@/lib/config';
 
 export default function Cart() {
   const { items, removeItem } = useCartStore();
 
-  const breakdown    = calculateOrderTotal(items, false);
-  const shippingCost = getShippingCost(items.length);
-  const showCommunity = canJoinCommunityOrder(items.length);
+  const isCommunityDefault = defaultIsCommunity(items.length);
+  const breakdown          = calculateOrderTotal(items, isCommunityDefault);
+  const shippingCost       = getShippingCost(items.length);
 
   if (items.length === 0) {
     return (
@@ -72,9 +72,13 @@ export default function Cart() {
         </div>
       </div>
 
-      {showCommunity && (
-        <p className="text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
-          Podés <strong>unirte a un pedido comunitario</strong> al pagar y ahorrar el envío.
+      {isCommunityDefault ? (
+        <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
+          Pedido <strong>comunitario</strong> — envío <strong>gratuito</strong>, entrega en mano.
+        </p>
+      ) : (
+        <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+          {items.length} prendas → pedido <strong>independiente</strong>, envío a tu dirección.
         </p>
       )}
 

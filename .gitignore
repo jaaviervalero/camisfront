@@ -15,3 +15,5 @@ backend/.env
 # misc
 .DS_Store
 *.log
+*.tar.gz
+*.env*

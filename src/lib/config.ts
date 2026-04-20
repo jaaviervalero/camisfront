@@ -11,7 +11,7 @@ export type AdultSize = (typeof ADULT_SIZES)[number];
 export type KidsSize  = (typeof KIDS_SIZES)[number];
 
 // -------------------------------------------------------------
-// Precios por versión (precio único — modificar aquí)
+// Precios por versión
 // -------------------------------------------------------------
 export const PRICES: Record<Version, number> = {
   Fan:      8,
@@ -23,24 +23,29 @@ export const PRICES: Record<Version, number> = {
 export const PERSONALIZATION_PRICE = 1;
 
 // -------------------------------------------------------------
-// Envío escalonado por cantidad de prendas
+// Lógica de pedido comunitario
+//
+// - < 4 prendas  → comunitario por defecto (el pedido va a casa
+//                  del vendedor y se entrega en mano/grupo)
+// - >= 4 prendas → independiente por defecto (necesita dirección)
 // -------------------------------------------------------------
+export const COMMUNITY_THRESHOLD = 4; // prendas
+
+export function defaultIsCommunity(itemCount: number): boolean {
+  return itemCount < COMMUNITY_THRESHOLD;
+}
+
+// Envío escalonado (sólo aplica a pedidos independientes)
 export function getShippingCost(itemCount: number): number {
   if (itemCount >= 4) return 0;
   if (itemCount === 3) return 1;
   if (itemCount === 2) return 3;
-  return 4; // 1 prenda
-}
-
-// Pedido comunitario disponible sólo cuando hay costo de envío
-export function canJoinCommunityOrder(itemCount: number): boolean {
-  return getShippingCost(itemCount) > 0;
+  return 4;
 }
 
 // -------------------------------------------------------------
 // Cálculo total
 // -------------------------------------------------------------
-
 export interface PriceBreakdown {
   subtotalPrendas: number;
   subtotalPersonalizacion: number;
@@ -52,7 +57,7 @@ export function calculateOrderTotal(
   items: Array<{ version: Version; nombre?: string; dorsal?: string }>,
   isCommunity: boolean,
 ): PriceBreakdown {
-  let subtotalPrendas = 0;
+  let subtotalPrendas         = 0;
   let subtotalPersonalizacion = 0;
 
   for (const item of items) {
