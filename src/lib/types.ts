@@ -2,7 +2,7 @@ import type { Version } from './config';
 
 export interface CartItem {
   id: string;
-  descripcion?: string;  // texto libre opcional que describe la camiseta
+  descripcion?: string;
   version: Version;
   talla: string;
   nombre?: string;
@@ -13,6 +13,7 @@ export interface CartItem {
 
 export interface ShippingFormData {
   envio_nombre: string;
+  envio_email: string;
   envio_direccion: string;
   envio_pais: string;
   envio_estado_provincia: string;
@@ -22,7 +23,6 @@ export interface ShippingFormData {
 }
 
 export interface PedidoInsert extends ShippingFormData {
-  usa_codigo_descuento: boolean;
   es_comunitario: boolean;
   items_json: CartItem[];
   precio_total: number;

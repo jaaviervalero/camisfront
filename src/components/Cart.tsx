@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useCartStore } from '@/store/cartStore';
-import { calculateOrderTotal, canJoinCommunityOrder } from '@/lib/config';
+import { calculateOrderTotal, canJoinCommunityOrder, getShippingCost } from '@/lib/config';
 
 export default function Cart() {
-  const { items, discountApplied, removeItem } = useCartStore();
+  const { items, removeItem } = useCartStore();
 
-  const breakdown = calculateOrderTotal(items, discountApplied, false);
+  const breakdown    = calculateOrderTotal(items, false);
+  const shippingCost = getShippingCost(items.length);
+  const showCommunity = canJoinCommunityOrder(items.length);
 
   if (items.length === 0) {
     return (
@@ -16,8 +18,6 @@ export default function Cart() {
       </div>
     );
   }
-
-  const canCommunity = canJoinCommunityOrder(discountApplied, items.length);
 
   return (
     <div className="bg-white rounded-2xl shadow-lg p-6 space-y-4">
@@ -38,15 +38,12 @@ export default function Cart() {
               </p>
               <p className="text-xs text-gray-500">
                 {item.version} · Talla {item.talla}
-                {(item.nombre || item.dorsal) && ` · ${item.nombre ?? ''} ${item.dorsal ?? ''}`.trim()}
+                {(item.nombre || item.dorsal) && ` · ${[item.nombre, item.dorsal].filter(Boolean).join(' ')}`}
               </p>
             </div>
             <div className="text-right shrink-0">
               <p className="text-sm font-bold text-green-700">${item.precio_unitario}</p>
-              <button
-                onClick={() => removeItem(item.id)}
-                className="text-xs text-red-400 hover:text-red-600 mt-1"
-              >
+              <button onClick={() => removeItem(item.id)} className="text-xs text-red-400 hover:text-red-600 mt-1">
                 Eliminar
               </button>
             </div>
@@ -54,7 +51,6 @@ export default function Cart() {
         ))}
       </ul>
 
-      {/* Resumen de precios */}
       <div className="border-t pt-3 space-y-1 text-sm text-gray-700">
         <div className="flex justify-between">
           <span>Prendas</span>
@@ -67,25 +63,23 @@ export default function Cart() {
           </div>
         )}
         <div className="flex justify-between">
-          <span>Envío</span>
-          <span>{breakdown.costoEnvio === 0 ? 'Gratis' : `$${breakdown.costoEnvio.toFixed(2)}`}</span>
+          <span>Envío estimado</span>
+          <span>{shippingCost === 0 ? <span className="text-green-600 font-medium">Gratis</span> : `$${shippingCost}`}</span>
         </div>
         <div className="flex justify-between font-bold text-base text-gray-900 border-t pt-2">
-          <span>Total</span>
+          <span>Total estimado</span>
           <span>${breakdown.total.toFixed(2)}</span>
         </div>
       </div>
 
-      {canCommunity && (
+      {showCommunity && (
         <p className="text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
-          Puedes unirte a un <strong>pedido comunitario</strong> al finalizar la compra.
+          Podés <strong>unirte a un pedido comunitario</strong> al pagar y ahorrar el envío.
         </p>
       )}
 
-      <Link
-        href="/checkout"
-        className="block w-full text-center bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition"
-      >
+      <Link href="/checkout"
+        className="block w-full text-center bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-xl transition">
         Finalizar compra →
       </Link>
     </div>
