@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/cartStore';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase';
 import {
   calculateOrderTotal,
   canJoinCommunityOrder,
@@ -74,6 +74,7 @@ export default function CheckoutForm() {
       estado: 'pendiente',
     };
 
+    const supabase = createClient();
     const { error } = await supabase.from('pedidos').insert(pedido);
 
     if (error) {
